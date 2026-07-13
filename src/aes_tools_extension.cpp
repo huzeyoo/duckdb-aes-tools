@@ -33,8 +33,8 @@ namespace duckdb {
 // ------------------------- Base64 helpers -------------------------
 
 static const char kB64Table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                                 "abcdefghijklmnopqrstuvwxyz"
-                                 "0123456789+/";
+                                "abcdefghijklmnopqrstuvwxyz"
+                                "0123456789+/";
 
 static std::string Base64Encode(const unsigned char *data, size_t len) {
 	std::string out;
@@ -42,7 +42,7 @@ static std::string Base64Encode(const unsigned char *data, size_t len) {
 	size_t i = 0;
 	while (i + 3 <= len) {
 		unsigned int n = (static_cast<unsigned int>(data[i]) << 16) | (static_cast<unsigned int>(data[i + 1]) << 8) |
-		                  static_cast<unsigned int>(data[i + 2]);
+		                 static_cast<unsigned int>(data[i + 2]);
 		out += kB64Table[(n >> 18) & 0x3F];
 		out += kB64Table[(n >> 12) & 0x3F];
 		out += kB64Table[(n >> 6) & 0x3F];
@@ -101,8 +101,7 @@ static std::vector<unsigned char> Base64Decode(const std::string &in) {
 	}
 	for (size_t i = 0; i < in.size() - padding; i++) {
 		if (B64Val(static_cast<unsigned char>(in[i])) < 0) {
-			throw InvalidInputException("Invalid Base64 input: invalid character at position %d",
-			                            static_cast<int>(i));
+			throw InvalidInputException("Invalid Base64 input: invalid character at position %d", static_cast<int>(i));
 		}
 	}
 	for (size_t i = in.size() - padding; i < in.size(); i++) {
@@ -149,11 +148,10 @@ static const EVP_CIPHER *PickEcbCipher(size_t key_len) {
 	case 32:
 		return EVP_aes_256_ecb();
 	default:
-		throw InvalidInputException(
-		    "AES key must decode to 16, 24 or 32 raw bytes (got %d bytes). "
-		    "Make sure you are passing the Base64 of the actual SecretKey bytes, "
-		    "not the seed/passphrase string.",
-		    static_cast<int>(key_len));
+		throw InvalidInputException("AES key must decode to 16, 24 or 32 raw bytes (got %d bytes). "
+		                            "Make sure you are passing the Base64 of the actual SecretKey bytes, "
+		                            "not the seed/passphrase string.",
+		                            static_cast<int>(key_len));
 	}
 }
 
@@ -172,7 +170,7 @@ static std::string AesEcbEncryptRaw(const std::vector<unsigned char> &key, const
 	std::vector<unsigned char> out(plaintext.size() + static_cast<size_t>(EVP_CIPHER_CTX_block_size(ctx)));
 	int len1 = 0, len2 = 0;
 	if (EVP_EncryptUpdate(ctx, out.data(), &len1, reinterpret_cast<const unsigned char *>(plaintext.data()),
-	                       static_cast<int>(plaintext.size())) != 1) {
+	                      static_cast<int>(plaintext.size())) != 1) {
 		EVP_CIPHER_CTX_free(ctx);
 		throw InvalidInputException("aes_encrypt: encryption failed");
 	}
@@ -245,11 +243,11 @@ static void AesDecryptFun(DataChunk &args, ExpressionState &state, Vector &resul
 
 static void LoadInternal(ExtensionLoader &loader) {
 	auto aes_encrypt_fun = ScalarFunction("aes_encrypt", {LogicalType::VARCHAR, LogicalType::VARCHAR},
-	                                       LogicalType::VARCHAR, AesEncryptFun);
+	                                      LogicalType::VARCHAR, AesEncryptFun);
 	loader.RegisterFunction(aes_encrypt_fun);
 
 	auto aes_decrypt_fun = ScalarFunction("aes_decrypt", {LogicalType::VARCHAR, LogicalType::VARCHAR},
-	                                       LogicalType::VARCHAR, AesDecryptFun);
+	                                      LogicalType::VARCHAR, AesDecryptFun);
 	loader.RegisterFunction(aes_decrypt_fun);
 }
 
