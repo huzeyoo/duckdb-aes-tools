@@ -1,0 +1,68 @@
+# name: test/sql/aes_tools.test
+# description: test aes_tools extension
+# group: [sql]
+
+# 加载当前扩展
+require aes_tools
+
+# Java AES 固定加密向量
+query T
+SELECT aes_encrypt(
+    'root',
+    'jJsFkVQhLQHC+FmtyK+XmQ=='
+);
+----
+bxQZzx35XVfL3T6L/NIeQg==
+
+# Java AES 固定解密向量
+query T
+SELECT aes_decrypt(
+    'bxQZzx35XVfL3T6L/NIeQg==',
+    'jJsFkVQhLQHC+FmtyK+XmQ=='
+);
+----
+root
+
+# Unicode 往返测试
+query T
+SELECT aes_decrypt(
+    aes_encrypt(
+        '中文🔐',
+        'jJsFkVQhLQHC+FmtyK+XmQ=='
+    ),
+    'jJsFkVQhLQHC+FmtyK+XmQ=='
+);
+----
+中文🔐
+
+# 空明文往返测试
+query I
+SELECT length(
+    aes_decrypt(
+        aes_encrypt(
+            '',
+            'jJsFkVQhLQHC+FmtyK+XmQ=='
+        ),
+        'jJsFkVQhLQHC+FmtyK+XmQ=='
+    )
+);
+----
+0
+
+# 非法 Base64 必须报错
+statement error
+SELECT aes_encrypt(
+    'root',
+    'invalid-key'
+);
+----
+Invalid Input Error: Invalid Base64 input: length must be a multiple of 4
+
+# 空密文必须报错
+statement error
+SELECT aes_decrypt(
+    '',
+    'jJsFkVQhLQHC+FmtyK+XmQ=='
+);
+----
+Invalid Input Error: aes_decrypt: ciphertext must not be empty
