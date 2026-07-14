@@ -1,11 +1,22 @@
-# Testing this extension
-This directory contains all the tests for this extension. The `sql` directory holds tests that are written as [SQLLogicTests](https://duckdb.org/dev/sqllogictest/intro.html). DuckDB aims to have most its tests in this format as SQL statements, so for the quack extension, this should probably be the goal too.
+# Testing aes_tools
 
-The root makefile contains targets to build and run all of these tests. To run the SQLLogicTests:
-```bash
+SQL tests for this extension are written as DuckDB SQLLogicTests in the `sql` directory.
+
+Run the release tests with:
+
+```shell
 make test
 ```
-or 
-```bash
+
+Or run the debug tests with:
+
+```shell
 make test_debug
+```
+
+Before committing, also run the repository's formatting and static-analysis checks:
+
+```shell
+make format-check
+make tidy-check
 ```

@@ -2,23 +2,19 @@
 # description: test aes_tools extension
 # group: [sql]
 
-# 加载当前扩展
 require aes_tools
 
-# Java AES 固定加密向量
+# Hutool AES 固定加密向量
 query T
-SELECT aes_encrypt(
-    'root',
-    'jJsFkVQhLQHC+FmtyK+XmQ=='
-);
+SELECT aes_encrypt('root', '1234567891234567');
 ----
-bxQZzx35XVfL3T6L/NIeQg==
+bf7d6502bed67bfcf4ad9828eeb35f5f
 
-# Java AES 固定解密向量
+# Hutool AES 固定解密向量
 query T
 SELECT aes_decrypt(
-    'bxQZzx35XVfL3T6L/NIeQg==',
-    'jJsFkVQhLQHC+FmtyK+XmQ=='
+    'bf7d6502bed67bfcf4ad9828eeb35f5f',
+    '1234567891234567'
 );
 ----
 root
@@ -26,11 +22,8 @@ root
 # Unicode 往返测试
 query T
 SELECT aes_decrypt(
-    aes_encrypt(
-        '中文🔐',
-        'jJsFkVQhLQHC+FmtyK+XmQ=='
-    ),
-    'jJsFkVQhLQHC+FmtyK+XmQ=='
+    aes_encrypt('中文🔐', '1234567891234567'),
+    '1234567891234567'
 );
 ----
 中文🔐
@@ -39,30 +32,79 @@ SELECT aes_decrypt(
 query I
 SELECT length(
     aes_decrypt(
-        aes_encrypt(
-            '',
-            'jJsFkVQhLQHC+FmtyK+XmQ=='
-        ),
-        'jJsFkVQhLQHC+FmtyK+XmQ=='
+        aes_encrypt('', '1234567891234567'),
+        '1234567891234567'
     )
 );
 ----
 0
 
-# 非法 Base64 必须报错
-statement error
-SELECT aes_encrypt(
-    'root',
-    'invalid-key'
+# NULL 自动传播
+query II
+SELECT
+    aes_encrypt(NULL, '1234567891234567') IS NULL,
+    aes_decrypt(NULL, '1234567891234567') IS NULL;
+----
+1	1
+
+# 调用者可用 TRY 将错误转换为 NULL
+query II
+SELECT
+    TRY(aes_encrypt('root', 'short-key')) IS NULL,
+    TRY(aes_decrypt('历史明文', '1234567891234567')) IS NULL;
+----
+1	1
+
+# 调用者可显式兼容历史明文
+query T
+SELECT COALESCE(
+    TRY(aes_decrypt('历史明文', '1234567891234567')),
+    '历史明文'
 );
 ----
-Invalid Input Error: Invalid Base64 input: length must be a multiple of 4
+历史明文
 
-# 空密文必须报错
+# 加密密钥长度错误
+statement error
+SELECT aes_encrypt('root', 'short-key');
+----
+Invalid Input Error: aes_encrypt: key must be exactly 16 UTF-8 bytes (got 9 bytes)
+
+# 解密密钥长度错误
 statement error
 SELECT aes_decrypt(
-    '',
-    'jJsFkVQhLQHC+FmtyK+XmQ=='
+    'bf7d6502bed67bfcf4ad9828eeb35f5f',
+    'short-key'
 );
 ----
+Invalid Input Error: aes_decrypt: key must be exactly 16 UTF-8 bytes (got 9 bytes)
+
+# 空密文
+statement error
+SELECT aes_decrypt('', '1234567891234567');
+----
 Invalid Input Error: aes_decrypt: ciphertext must not be empty
+
+# Hex 长度不是 AES 分组对应的 32 字符倍数
+statement error
+SELECT aes_decrypt('abcd', '1234567891234567');
+----
+Invalid Input Error: aes_decrypt: ciphertext Hex length must be a multiple of 32 characters
+
+# 非法 Hex 字符
+statement error
+SELECT aes_decrypt(
+    'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz',
+    '1234567891234567'
+);
+----
+Invalid Input Error: aes_decrypt: ciphertext contains a non-hex character
+
+# 错误密钥或损坏密文
+statement error
+SELECT aes_decrypt(
+    'bf7d6502bed67bfcf4ad9828eeb35f5f',
+    '7654321987654321'
+);
+----
+Invalid Input Error: aes_decrypt: decryption failed; key is incorrect or ciphertext is corrupted

@@ -1,102 +1,124 @@
-# Quack
+# aes_tools
 
-This repository is based on https://github.com/duckdb/extension-template, check it out if you want to build and ship your own DuckDB extension.
+`aes_tools` is a DuckDB extension that provides Hutool-compatible AES encryption and decryption functions.
 
----
+## Functions
 
-This extension, Quack, allow you to ... <extension_goal>.
+```sql
+aes_encrypt(plaintext VARCHAR, key VARCHAR) -> VARCHAR
+aes_decrypt(ciphertext_hex VARCHAR, key VARCHAR) -> VARCHAR
+```
 
+The implementation uses:
+
+- AES-128 in ECB mode
+- PKCS5Padding (byte-compatible with OpenSSL's PKCS7 padding for AES)
+- lowercase Hex ciphertext
+- a caller-supplied key that must be exactly 16 bytes after UTF-8 encoding
+
+It is compatible with the following Hutool usage:
+
+```java
+byte[] key = "1234567891234567".getBytes(StandardCharsets.UTF_8);
+
+String encrypted = SecureUtil.aes(key)
+        .encryptHex(value, StandardCharsets.UTF_8);
+
+String decrypted = SecureUtil.aes(key)
+        .decryptStr(encrypted, StandardCharsets.UTF_8);
+```
+
+The key length is validated in bytes, not characters. A key containing multibyte UTF-8 characters may therefore be fewer than 16 characters while still occupying 16 bytes.
+
+## Error handling
+
+Except for DuckDB's normal `NULL` propagation, encryption and decryption errors are raised as DuckDB errors. This includes invalid key length, malformed Hex input, invalid block length, incorrect keys, and corrupted ciphertext.
+
+Callers can choose their own fallback behavior with DuckDB's `TRY` expression:
+
+```sql
+-- Strict: stop the query when decryption fails.
+SELECT aes_decrypt(encrypted_value, '1234567891234567');
+
+-- Convert a row-level error to NULL.
+SELECT TRY(aes_decrypt(encrypted_value, '1234567891234567'));
+
+-- Explicitly preserve historical plaintext when decryption fails.
+SELECT COALESCE(
+    TRY(aes_decrypt(value, '1234567891234567')),
+    value
+);
+```
+
+Error messages never include the key, plaintext, or complete ciphertext.
+
+## Example
+
+```sql
+SELECT aes_encrypt('root', '1234567891234567');
+-- bf7d6502bed67bfcf4ad9828eeb35f5f
+
+SELECT aes_decrypt(
+    'bf7d6502bed67bfcf4ad9828eeb35f5f',
+    '1234567891234567'
+);
+-- root
+```
 
 ## Building
-### Managing dependencies
-DuckDB extensions uses VCPKG for dependency management. Enabling VCPKG is very simple: follow the [installation instructions](https://vcpkg.io/en/getting-started) or just run the following:
+
+Initialize the submodules first:
+
 ```shell
-git clone https://github.com/Microsoft/vcpkg.git
-./vcpkg/bootstrap-vcpkg.sh
-export VCPKG_TOOLCHAIN_PATH=`pwd`/vcpkg/scripts/buildsystems/vcpkg.cmake
+git submodule update --init --recursive
 ```
-Note: VCPKG is only required for extensions that want to rely on it for dependency management. If you want to develop an extension without dependencies, or want to do your own dependency management, just skip this step. Note that the example extension uses VCPKG to build with a dependency for instructive purposes, so when skipping this step the build may not work without removing the dependency.
 
-### Build steps
-Now to build the extension, run:
-```sh
-make
+OpenSSL development files must be available to CMake. Then build the release extension:
+
+```shell
+GEN=ninja make release
 ```
-The main binaries that will be built are:
-```sh
+
+The loadable extension is generated at:
+
+```text
+build/release/extension/aes_tools/aes_tools.duckdb_extension
+```
+
+The DuckDB CLI produced by this repository links `aes_tools` statically, so its functions are immediately available:
+
+```shell
 ./build/release/duckdb
-./build/release/test/unittest
-./build/release/extension/quack/quack.duckdb_extension
-```
-- `duckdb` is the binary for the duckdb shell with the extension code automatically loaded.
-- `unittest` is the test runner of duckdb. Again, the extension is already linked into the binary.
-- `quack.duckdb_extension` is the loadable binary as it would be distributed.
-
-## Running the extension
-To run the extension code, simply start the shell with `./build/release/duckdb`.
-
-Now we can use the features from the extension directly in DuckDB. The template contains a single scalar function `quack()` that takes a string arguments and returns a string:
-```
-D select quack('Jane') as result;
-┌───────────────┐
-│    result     │
-│    varchar    │
-├───────────────┤
-│ Quack Jane 🐥 │
-└───────────────┘
 ```
 
-## Running the tests
-Different tests can be created for DuckDB extensions. The primary way of testing DuckDB extensions should be the SQL tests in `./test/sql`. These SQL tests can be run using:
-```sh
-make test
-```
+To test the loadable artifact with a compatible DuckDB v1.4.5 CLI, enable unsigned extensions and load it explicitly:
 
-### Installing the deployed binaries
-To install your extension binaries from S3, you will need to do two things. Firstly, DuckDB should be launched with the
-`allow_unsigned_extensions` option set to true. How to set this will depend on the client you're using. Some examples:
-
-CLI:
 ```shell
 duckdb -unsigned
 ```
 
-Python:
-```python
-con = duckdb.connect(':memory:', config={'allow_unsigned_extensions' : 'true'})
-```
-
-NodeJS:
-```js
-db = new duckdb.Database(':memory:', {"allow_unsigned_extensions": "true"});
-```
-
-Secondly, you will need to set the repository endpoint in DuckDB to the HTTP url of your bucket + version of the extension
-you want to install. To do this run the following SQL query in DuckDB:
 ```sql
-SET custom_extension_repository='bucket.s3.eu-west-1.amazonaws.com/<your_extension_name>/latest';
-```
-Note that the `/latest` path will allow you to install the latest extension version available for your current version of
-DuckDB. To specify a specific version, you can pass the version instead.
-
-After running these steps, you can install and load your extension using the regular INSTALL/LOAD commands in DuckDB:
-```sql
-INSTALL quack;
-LOAD quack;
+LOAD 'build/release/extension/aes_tools/aes_tools.duckdb_extension';
 ```
 
-## Setting up CLion
+## Development checks
 
-### Opening project
-Configuring CLion with this extension requires a little work. Firstly, make sure that the DuckDB submodule is available.
-Then make sure to open `./duckdb/CMakeLists.txt` (so not the top level `CMakeLists.txt` file from this repo) as a project in CLion.
-Now to fix your project path go to `tools->CMake->Change Project Root`([docs](https://www.jetbrains.com/help/clion/change-project-root-directory.html)) to set the project root to the root dir of this repo.
+Run these checks before committing:
 
-### Debugging
-To set up debugging in CLion, there are two simple steps required. Firstly, in `CLion -> Settings / Preferences -> Build, Execution, Deploy -> CMake` you will need to add the desired builds (e.g. Debug, Release, RelDebug, etc). There's different ways to configure this, but the easiest is to leave all empty, except the `build path`, which needs to be set to `../build/{build type}`, and CMake Options to which the following flag should be added, with the path to the extension CMakeList:
-
-```
--DDUCKDB_EXTENSION_CONFIGS=<path_to_the_exentension_CMakeLists.txt>
+```shell
+make format-check
+make tidy-check
+make test
+git diff --check
+git status --short
 ```
 
-The second step is to configure the unittest runner as a run/debug configuration. To do this, go to `Run -> Edit Configurations` and click `+ -> Cmake Application`. The target and executable should be `unittest`. This will run all the DuckDB tests. To specify only running the extension specific tests, add `--test-dir ../../.. [sql]` to the `Program Arguments`. Note that it is recommended to use the `unittest` executable for testing/development within CLion. The actual DuckDB CLI currently does not reliably work as a run target in CLion.
+The SQLLogicTests cover fixed Hutool-compatible vectors, Unicode and empty-string round trips, `NULL` propagation, `TRY` behavior, invalid key lengths, malformed Hex input, and incorrect-key failures.
+
+## Security note
+
+ECB mode is deterministic and does not provide authentication. Identical plaintext blocks produce identical ciphertext blocks, and a wrong key can very rarely produce valid padding by chance. This extension uses ECB only for compatibility with existing Hutool-encrypted data. For new security-sensitive designs, prefer an authenticated mode such as AES-GCM.
+
+## DuckDB compatibility
+
+This repository currently targets DuckDB v1.4.5. DuckDB extensions use internal C++ APIs and must be rebuilt—and may require source changes—when upgrading DuckDB.
