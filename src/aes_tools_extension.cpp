@@ -10,6 +10,8 @@
 
 #include <openssl/evp.h>
 
+#include "aes_gcm_functions.hpp"
+
 #include <string>
 #include <vector>
 
@@ -166,6 +168,8 @@ static void LoadInternal(ExtensionLoader &loader) {
 	auto aes_decrypt_fun = ScalarFunction("aes_decrypt", {LogicalType::VARCHAR, LogicalType::VARCHAR},
 	                                      LogicalType::VARCHAR, AesDecryptFun);
 	loader.RegisterFunction(aes_decrypt_fun);
+
+	RegisterAesGcmFunctions(loader);
 }
 
 void AesToolsExtension::Load(ExtensionLoader &loader) {

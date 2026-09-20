@@ -1,0 +1,114 @@
+# name: test/sql/aes_gcm.test
+# description: AES-256-GCM compatibility with AesGcmCrypto.java
+# group: [sql]
+
+require aes_tools
+
+# Java AES/GCM/NoPadding vector: zero key, zero nonce, "hello".
+# Protocol bytes are version(1) + nonce(12) + ciphertext + tag(16).
+query T
+SELECT aes_gcm_decrypt(
+    from_base64('AQAAAAAAAAAAAAAAAKbCLFEii5CPf2L/zqapL6vvOb9Nkw=='),
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+);
+----
+hello
+
+query T
+SELECT aes_gcm_decrypt_base64(
+    'AQAAAAAAAAAAAAAAAKbCLFEii5CPf2L/zqapL6vvOb9Nkw==',
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+);
+----
+hello
+
+# Historical Base64(nonce + ciphertext + tag), without a version byte.
+query T
+SELECT aes_gcm_decrypt_base64(
+    'AAAAAAAAAAAAAAAApsIsUSKLkI9/Yv/Opqkvq+85v02T',
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+);
+----
+hello
+
+# Java decryptFromBytes also accepts Base64 text bytes from a binary column.
+query T
+SELECT aes_gcm_decrypt(
+    'AAAAAAAAAAAAAAAApsIsUSKLkI9/Yv/Opqkvq+85v02T'::BLOB,
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+);
+----
+hello
+
+# A legacy nonce may start with 0x01; fall back after versioned auth fails.
+query T
+SELECT aes_gcm_decrypt_base64(
+    'AQAAAAAAAAAAAAAAzu3PVgCNMIt6jiI24v2tdxl/0hqV',
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+);
+----
+hello
+
+query T
+SELECT aes_gcm_decrypt(
+    aes_gcm_encrypt('中文🔐', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='),
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+);
+----
+中文🔐
+
+query I
+SELECT length(aes_gcm_decrypt_base64(
+    aes_gcm_encrypt_base64('', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='),
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+));
+----
+0
+
+query TT
+SELECT typeof(aes_gcm_encrypt('x', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=')),
+       typeof(aes_gcm_encrypt_base64('x', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='));
+----
+BLOB	VARCHAR
+
+query IIII
+SELECT aes_gcm_encrypt(NULL, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=') IS NULL,
+       aes_gcm_decrypt(NULL, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=') IS NULL,
+       aes_gcm_encrypt_base64(NULL, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=') IS NULL,
+       aes_gcm_decrypt_base64(NULL, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=') IS NULL;
+----
+1	1	1	1
+
+query II
+SELECT TRY(aes_gcm_decrypt_base64('historical plaintext', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=')) IS NULL,
+       TRY(aes_gcm_decrypt(from_base64('AQAAAAAAAAAAAAAAAKbCLFEii5CPf2L/zqapL6vvOb9Nkw=='),
+                           'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=')) IS NULL;
+----
+1	1
+
+statement error
+SELECT aes_gcm_encrypt('x', 'invalid');
+----
+Invalid Input Error: aes_gcm_encrypt: invalid Base64 input
+
+statement error
+SELECT aes_gcm_encrypt('x', 'AAAAAAAAAAAAAAAAAAAAAA==');
+----
+Invalid Input Error: aes_gcm_encrypt: key must decode to exactly 32 bytes (got 16 bytes)
+
+statement error
+SELECT aes_gcm_decrypt(from_base64('AgAAAAAAAAAAAAAAAKbCLFEii5CPf2L/zqapL6vvOb9Nkw=='),
+                       'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
+----
+Invalid Input Error: aes_gcm_decrypt: unsupported ciphertext version (expected 0x01)
+
+statement error
+SELECT aes_gcm_decrypt(from_base64('AQAAAAAAAAAAAAAAAKbCLFEii5CPf2L/zqapL6vvOb9Nkw=='),
+                       'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=');
+----
+Invalid Input Error: aes_gcm_decrypt: authentication failed; key or ciphertext is incorrect
+
+statement error
+SELECT aes_gcm_decrypt_base64('historical plaintext', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
+----
+Invalid Input Error: aes_gcm_decrypt_base64: invalid Base64 input
