@@ -19,6 +19,7 @@ jobs:
       duckdb_version: v1.4.5
       ci_tools_version: v1.4.5
       extension_name: aes_tools
+      vcpkg_commit: 319504a5326aa870edde46438c5455fa76305a56
 
   code-quality-check:
     name: Code Quality Check
